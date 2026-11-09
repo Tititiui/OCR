@@ -1,0 +1,58 @@
+name: Build Windows
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        shell: pwsh
+        run: Expand-Archive -Path ShipTableOCR-Desktop.zip -DestinationPath . -Force
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Download OCR language data
+        shell: bash
+        run: |
+          mkdir -p ShipTableOCR-Desktop/desktop/resources/common/tessdata
+          curl -L --fail -o ShipTableOCR-Desktop/desktop/resources/common/tessdata/eng.traineddata \
+            https://github.com/tesseract-ocr/tessdata_best/raw/main/eng.traineddata
+          ls -l ShipTableOCR-Desktop/desktop/resources/common/tessdata
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build Windows app
+        shell: bash
+        working-directory: ShipTableOCR-Desktop
+        run: |
+          set -o pipefail
+          gradle :desktop:createDistributable --stacktrace --console=plain 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: Show root cause
+        if: failure()
+        shell: bash
+        run: |
+          echo "===== Kotlin compile errors ====="
+          grep -nE "^e: " build.log | head -40 || true
+          echo "===== What went wrong ====="
+          grep -n -A8 "What went wrong" build.log | head -60 || true
+          echo "===== Caused by ====="
+          grep -n "Caused by" build.log | head -20 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: build.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ShipTableOCR-Windows
+          path: ShipTableOCR-Desktop/desktop/build/compose/binaries/main/app/ShipTableOCR
