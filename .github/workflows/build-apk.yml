@@ -1,0 +1,55 @@
+name: Build APK
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          unzip -q ShipTableOCR.zip
+          ls -la ShipTableOCR
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Android SDK packages
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" "platforms;android-34" "build-tools;34.0.0" > /dev/null
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Build debug APK
+        working-directory: ShipTableOCR
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug --stacktrace --console=plain 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+
+      - name: Show root cause
+        if: failure()
+        run: |
+          echo "===== Kotlin compile errors ====="
+          grep -nE "^e: " build.log | head -40 || true
+          echo "===== What went wrong ====="
+          grep -n -A8 "What went wrong" build.log | head -60 || true
+          echo "===== Caused by ====="
+          grep -n "Caused by" build.log | head -20 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-log
+          path: build.log
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: ShipTableOCR/app/build/outputs/apk/debug/app-debug.apk
